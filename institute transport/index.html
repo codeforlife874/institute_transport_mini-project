@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Campus Route Optimizer — DSCE</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    /* ── TOKENS ── */
+    :root {
+      --bg:       #0a0e1a;
+      --surface:  #111827;
+      --card:     #161f35;
+      --border:   #1e2d4a;
+      --accent:   #00e5ff;
+      --accent2:  #7c3aed;
+      --accent3:  #f59e0b;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --success:  #10b981;
+      --danger:   #ef4444;
+      --mono:     'Space Mono', monospace;
+      --sans:     'Sora', sans-serif;
+      --radius:   12px;
+      --glow:     0 0 30px rgba(0,229,255,0.15);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── GRID BACKGROUND ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,14,26,0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    .logo-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    nav {
+      display: flex;
+      gap: 2rem;
+      font-size: 0.8rem;
+      font-family: var(--mono);
+      color: var(--muted);
+    }
+
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+      cursor: pointer;
+    }
+    nav a:hover { color: var(--accent); }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      padding: 5rem 2rem 3rem;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      background: rgba(0,229,255,0.08);
+      border: 1px solid rgba(0,229,255,0.2);
+      color: var(--accent);
+      padding: 4px 14px;
+      border-radius: 100px;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      max-width: 520px;
+      margin: 0 auto 2rem;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 3rem;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-num {
+      font-family: var(--mono);
+      font-size: 1.8rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    .app-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1.5rem;
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-header h2 {
+      font-size: 0.8rem;
+      font-family: var(--mono);
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .panel-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .panel-body { padding: 1.25rem; }
+
+    /* ── FORM CONTROLS ── */
+    label {
+      display: block;
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    select, input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: var(--sans);
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      appearance: none;
+      -webkit-appearance: none;
+      margin-bottom: 1rem;
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.1);
+    }
+
+    select option { background: var(--surface); }
+
+    /* ── ALGO PICKER ── */
+    .algo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 1rem;
+    }
+
+    .algo-btn {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .algo-btn:hover {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.05);
+    }
+
+    .algo-btn.active {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.1);
+      box-shadow: var(--glow);
+    }
+
+    .algo-btn .algo-name {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--accent);
+      display: block;
+    }
+
+    .algo-btn .algo-desc {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 2px;
+      display: block;
+    }
+
+    /* ── RUN BUTTON ── */
+    .run-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, var(--accent), #0099bb);
+      border: none;
+      border-radius: 8px;
+      color: #000;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      text-transform: uppercase;
+    }
+
+    .run-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .run-btn:active { transform: translateY(0); }
+
+    /* ── RESULTS CARD ── */
+    .result-box {
+      margin-top: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .result-box.show { display: block; }
+
+    .result-header {
+      padding: 10px 14px;
+      background: rgba(0,229,255,0.06);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .result-body { padding: 14px; }
+
+    .result-metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+
+    .result-metric:last-child { border-bottom: none; }
+
+    .result-metric .key { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; }
+    .result-metric .val { color: var(--accent); font-weight: 600; font-family: var(--mono); }
+
+    /* ── CANVAS AREA ── */
+    .canvas-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .canvas-toolbar {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .canvas-toolbar h2 {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .toolbar-actions { display: flex; gap: 8px; }
+
+    .tb-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tb-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    #graphCanvas {
+      flex: 1;
+      display: block;
+      width: 100%;
+      height: 520px;
+      cursor: grab;
+    }
+
+    #graphCanvas:active { cursor: grabbing; }
+
+    /* ── PATH STEPS ── */
+    .path-steps {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border);
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      overflow-x: auto;
+    }
+
+    .step-node {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      animation: fadeIn 0.3s ease forwards;
+      opacity: 0;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-pill {
+      background: rgba(0,229,255,0.1);
+      border: 1px solid rgba(0,229,255,0.3);
+      color: var(--accent);
+      border-radius: 100px;
+      padding: 4px 12px;
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
+    .step-pill.start { background: rgba(16,185,129,0.15); border-color: var(--success); color: var(--success); }
+    .step-pill.end   { background: rgba(239,68,68,0.15); border-color: var(--danger); color: var(--danger); }
+
+    .step-arrow {
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 0 6px;
+      font-family: var(--mono);
+    }
+
+    .path-empty {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-family: var(--mono);
+      font-style: italic;
+    }
+
+    /* ── ALGO INFO SECTION ── */
+    .algo-info-section {
+      position: relative;
+      z-index: 1;
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    .section-title {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .info-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+    }
+
+    .card-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-algo {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .card-complexity {
+      margin-top: 1rem;
+      display: flex;
+      gap: 8px;
+    }
+
+    .badge {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(124,58,237,0.15);
+      border: 1px solid rgba(124,58,237,0.3);
+      color: #a78bfa;
+    }
+
+    /* ── TEAM ── */
+    .team-section {
+      position: relative;
+      z-index: 1;
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 0 2rem 5rem;
+    }
+
+    .team-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .team-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .team-avatar {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: white;
+      margin: 0 auto 1rem;
+      font-family: var(--mono);
+    }
+
+    .team-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .team-usn {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .team-role {
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    footer span { color: var(--accent); }
+
+    /* ── TOOLTIP ── */
+    .tooltip {
+      position: absolute;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--accent);
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 999;
+      display: none;
+      box-shadow: var(--glow);
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .app-grid { grid-template-columns: 1fr; }
+      .cards-row, .team-grid { grid-template-columns: 1fr; }
+      #graphCanvas { height: 380px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    CAMPUS_ROUTE // DSCE
+  </div>
+  <nav>
+    <a onclick="scrollTo({top:0,behavior:'smooth'})">Optimizer</a>
+    <a onclick="document.getElementById('algo-section').scrollIntoView({behavior:'smooth'})">Algorithms</a>
+    <a onclick="document.getElementById('team-section').scrollIntoView({behavior:'smooth'})">Team</a>
+    <a href="https://github.com/bhaktisharma23/institute-transport" target="_blank">GitHub</a>
+  </nav>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">DSA Mini Project · 4th Semester · 2025–2026</div>
+  <h1>Institute <span>Route</span><br/>Optimizer</h1>
+  <p>Graph-based campus navigation using Dijkstra's Algorithm, BFS, and A* — find the shortest path between any two locations at DSCE.</p>
+  <div class="stats-row">
+    <div class="stat">
+      <div class="stat-num">16</div>
+      <div class="stat-label">Locations</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">24</div>
+      <div class="stat-label">Paths</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Algorithms</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">O(E log V)</div>
+      <div class="stat-label">Complexity</div>
+    </div>
+  </div>
+</section>
+
+<!-- MAIN APP -->
+<div class="app-grid">
+
+  <!-- LEFT PANEL -->
+  <aside>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-dot"></div>
+        <h2>Route Finder</h2>
+      </div>
+      <div class="panel-body">
+
+        <label>Source Location</label>
+        <select id="srcSelect"></select>
+
+        <label>Destination Location</label>
+        <select id="dstSelect"></select>
+
+        <label>Algorithm</label>
+        <div class="algo-grid">
+          <div class="algo-btn active" data-algo="dijkstra" onclick="selectAlgo(this)">
+            <span class="algo-name">Dijkstra</span>
+            <span class="algo-desc">Shortest distance</span>
+          </div>
+          <div class="algo-btn" data-algo="bfs" onclick="selectAlgo(this)">
+            <span class="algo-name">BFS</span>
+            <span class="algo-desc">Fewest stops</span>
+          </div>
+          <div class="algo-btn" data-algo="astar" onclick="selectAlgo(this)">
+            <span class="algo-name">A*</span>
+            <span class="algo-desc">Heuristic</span>
+          </div>
+          <div class="algo-btn" data-algo="all" onclick="selectAlgo(this)">
+            <span class="algo-name">Compare</span>
+            <span class="algo-desc">All three</span>
+          </div>
+        </div>
+
+        <button class="run-btn" onclick="findRoute()">▶ Find Route</button>
+
+        <div class="result-box" id="resultBox">
+          <div class="result-header" id="resultTitle">Results</div>
+          <div class="result-body" id="resultBody"></div>
+        </div>
+
+      </div>
+    </div>
+  </aside>
+
+  <!-- CANVAS PANEL -->
+  <div class="canvas-wrap">
+    <div class="canvas-toolbar">
+      <h2>📍 Campus Graph</h2>
+      <div class="toolbar-actions">
+        <button class="tb-btn" onclick="resetView()">Reset View</button>
+        <button class="tb-btn" onclick="toggleWeights()">Toggle Weights</button>
+      </div>
+    </div>
+    <canvas id="graphCanvas"></canvas>
+    <div class="path-steps" id="pathSteps">
+      <span class="path-empty">Select source & destination, then click Find Route</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- TOOLTIP -->
+<div class="tooltip" id="tooltip"></div>
+
+<!-- ALGORITHM INFO -->
+<section class="algo-info-section" id="algo-section">
+  <div class="section-title">Algorithms Used</div>
+  <div class="cards-row">
+    <div class="info-card">
+      <div class="card-icon">⚡</div>
+      <div class="card-algo">Dijkstra's Algorithm</div>
+      <div class="card-title">Shortest Weighted Path</div>
+      <div class="card-desc">Uses a min-heap priority queue to greedily explore the node with smallest known distance. Guarantees optimal result on non-negative weighted graphs.</div>
+      <div class="card-complexity">
+        <span class="badge">Time: O(E log V)</span>
+        <span class="badge">Space: O(V)</span>
+      </div>
+    </div>
+    <div class="info-card">
+      <div class="card-icon">🔍</div>
+      <div class="card-algo">BFS</div>
+      <div class="card-title">Fewest Stops Path</div>
+      <div class="card-desc">Breadth-First Search explores all nodes at the current depth before moving deeper. Finds the path with the minimum number of intermediate stops.</div>
+      <div class="card-complexity">
+        <span class="badge">Time: O(V + E)</span>
+        <span class="badge">Space: O(V)</span>
+      </div>
+    </div>
+    <div class="info-card">
+      <div class="card-icon">🎯</div>
+      <div class="card-algo">A* Search</div>
+      <div class="card-title">Heuristic Path</div>
+      <div class="card-desc">Extends Dijkstra with a heuristic function h(n) to guide search towards the goal. With GPS coordinates (future), uses Euclidean distance as heuristic.</div>
+      <div class="card-complexity">
+        <span class="badge">Time: O(E log V)</span>
+        <span class="badge">Space: O(V)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TEAM -->
+<section class="team-section" id="team-section">
+  <div class="section-title">The Team</div>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-avatar">BS</div>
+      <div class="team-name">Bhakti Sharma</div>
+      <div class="team-usn">1DS24CS042</div>
+      <div class="team-role">Graph design & Dijkstra's Algorithm implementation</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">AP</div>
+      <div class="team-name">Arpita Pai PV</div>
+      <div class="team-usn">1DS24CS031</div>
+      <div class="team-role">Module integration, result display & documentation</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar">GC</div>
+      <div class="team-name">Gauri Chiranjeev</div>
+      <div class="team-usn">1DS24CS072</div>
+      <div class="team-role">Data collection, BFS logic & I/O handling</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Dayananda Sagar College of Engineering · Department of CSE ·
+  <span>22CS49</span> · DSA Mini Project · 2025–2026
+</footer>
+
+<script>
+// ═══════════════════════════════════════
+//   CAMPUS DATA
+// ═══════════════════════════════════════
+const LOCATIONS = {
+  0:  "Main Gate",
+  1:  "Admin Block",
+  2:  "CS/IS Block",
+  3:  "ECE/TC Block",
+  4:  "ME/CV Block",
+  5:  "EEE/AE Block",
+  6:  "Central Library",
+  7:  "Lab Complex",
+  8:  "NRI Canteen",
+  9:  "Boys Hostel",
+  10: "Girls Hostel",
+  11: "CPA Auditorium",
+  12: "Sports Ground",
+  13: "Medical Center",
+  14: "Parking Lot",
+  15: "Bus Stop"
+};
+
+const EDGES_RAW = [
+  [0,14,40],[0,15,30],[0,1,120],
+  [1,2,80],[1,6,100],[1,11,90],
+  [2,3,70],[2,7,60],
+  [3,5,80],[3,7,65],
+  [4,5,75],[4,12,100],
+  [5,7,90],
+  [6,7,110],[6,11,80],
+  [7,8,120],
+  [8,9,90],[8,10,85],[8,13,70],
+  [9,10,60],[9,13,80],
+  [10,12,130],
+  [11,12,150],
+  [12,14,200]
+];
+
+// Fixed layout positions for nodes (x, y) — normalized 0..1
+const NODE_POS = {
+  0:  [0.50, 0.05],   // Main Gate — top center
+  15: [0.38, 0.05],   // Bus Stop
+  14: [0.62, 0.05],   // Parking Lot
+  1:  [0.50, 0.18],   // Admin Block
+  11: [0.68, 0.25],   // CPA Auditorium
+  6:  [0.32, 0.28],   // Central Library
+  2:  [0.50, 0.35],   // CS/IS Block
+  3:  [0.65, 0.42],   // ECE/TC Block
+  5:  [0.75, 0.52],   // EEE/AE Block
+  4:  [0.80, 0.62],   // ME/CV Block
+  7:  [0.42, 0.50],   // Lab Complex
+  8:  [0.28, 0.62],   // NRI Canteen
+  13: [0.14, 0.68],   // Medical Center
+  9:  [0.25, 0.78],   // Boys Hostel
+  10: [0.42, 0.82],   // Girls Hostel
+  12: [0.65, 0.80],   // Sports Ground
+};
+// Build adjacency list
+const adj = {};
+for (const id in LOCATIONS) adj[+id] = [];
+for (const [u, v, w] of EDGES_RAW) {
+  adj[u].push([v, w]);
+  adj[v].push([u, w]);
+}
+
+// ═══════════════════════════════════════
+//   POPULATE SELECTS
+// ═══════════════════════════════════════
+const srcSel = document.getElementById('srcSelect');
+const dstSel = document.getElementById('dstSelect');
+
+for (const [id, name] of Object.entries(LOCATIONS)) {
+  const o1 = new Option(name, id);
+  const o2 = new Option(name, id);
+  srcSel.appendChild(o1);
+  dstSel.appendChild(o2);
+}
+dstSel.value = "4"; // default destination: Library
+
+// ═══════════════════════════════════════
+//   CANVAS SETUP
+// ═══════════════════════════════════════
+const canvas  = document.getElementById('graphCanvas');
+const ctx     = canvas.getContext('2d');
+let showWeights = true;
+
+let currentPath  = [];
+let highlightSrc = -1;
+let highlightDst = -1;
+let animFrame    = 0;
+
+// Pan/zoom state
+let offsetX = 0, offsetY = 0, scale = 1;
+let dragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    offsetX += e.clientX - lastX;
+    offsetY += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    draw();
+  }
+  handleHover(e);
+});
+canvas.addEventListener('mouseup',   () => dragging = false);
+canvas.addEventListener('mouseleave',() => { dragging = false; hideTooltip(); });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  scale = Math.max(0.4, Math.min(2.5, scale * delta));
+  draw();
+}, { passive: false });
+
+function resetView() { offsetX = 0; offsetY = 0; scale = 1; draw(); }
+function toggleWeights() { showWeights = !showWeights; draw(); }
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width;
+  canvas.height = rect.height;
+  draw();
+}
+
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════
+//   COORDINATE HELPERS
+// ═══════════════════════════════════════
+function nodeXY(id) {
+  const [px, py] = NODE_POS[id];
+  const W = canvas.width, H = canvas.height;
+  const pad = 60;
+  const x = pad + px * (W - pad * 2);
+  const y = pad + py * (H - pad * 2);
+  return [x * scale + offsetX, y * scale + offsetY];
+}
+
+// ═══════════════════════════════════════
+//   DRAW
+// ═══════════════════════════════════════
+function draw() {
+  if (!canvas.width) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Determine path set for highlight
+  const pathSet = new Set(currentPath);
+  const pathEdges = new Set();
+  for (let i = 0; i < currentPath.length - 1; i++) {
+    pathEdges.add(`${currentPath[i]}-${currentPath[i+1]}`);
+    pathEdges.add(`${currentPath[i+1]}-${currentPath[i]}`);
+  }
+
+  // Draw edges
+  const drawnEdges = new Set();
+  for (const [u, v, w] of EDGES_RAW) {
+    const key = `${Math.min(u,v)}-${Math.max(u,v)}`;
+    if (drawnEdges.has(key)) continue;
+    drawnEdges.add(key);
+
+    const [x1,y1] = nodeXY(u);
+    const [x2,y2] = nodeXY(v);
+    const isPath = pathEdges.has(`${u}-${v}`);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+
+    if (isPath) {
+      ctx.strokeStyle = '#00e5ff';
+      ctx.lineWidth   = 2.5;
+      ctx.shadowColor = '#00e5ff';
+      ctx.shadowBlur  = 10;
+    } else {
+      ctx.strokeStyle = '#1e2d4a';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowBlur  = 0;
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Weight label
+    if (showWeights) {
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      ctx.fillStyle = isPath ? '#00b8cc' : '#334155';
+      ctx.font = `${Math.round(9 * scale)}px Space Mono, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${w}m`, mx, my - 7);
+    }
+  }
+
+  // Draw nodes
+  for (const id in LOCATIONS) {
+    const nid = +id;
+    const [x, y] = nodeXY(nid);
+    const r = Math.max(6, 14 * scale);
+    const isOnPath = pathSet.has(nid);
+    const isSrc = nid === highlightSrc;
+    const isDst = nid === highlightDst;
+
+    // Glow for path nodes
+    if (isOnPath) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6, 0, Math.PI * 2);
+      ctx.fillStyle = isSrc ? 'rgba(16,185,129,0.2)' :
+                      isDst ? 'rgba(239,68,68,0.2)' :
+                              'rgba(0,229,255,0.12)';
+      ctx.fill();
+    }
+
+    // Node circle
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+
+    if (isSrc)       ctx.fillStyle = '#10b981';
+    else if (isDst)  ctx.fillStyle = '#ef4444';
+    else if (isOnPath) ctx.fillStyle = '#00e5ff';
+    else             ctx.fillStyle = '#1e2d4a';
+
+    ctx.fill();
+    ctx.strokeStyle = isSrc ? '#10b981' :
+                      isDst ? '#ef4444' :
+                      isOnPath ? '#00e5ff' : '#334155';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Node label
+    const fontSize = Math.max(8, Math.round(10 * scale));
+    ctx.font = `600 ${fontSize}px Sora, sans-serif`;
+    ctx.fillStyle = isOnPath ? '#fff' : '#64748b';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(LOCATIONS[nid], x, y + r + 4);
+
+    // ID inside node
+    ctx.font = `700 ${Math.max(7, Math.round(9*scale))}px Space Mono, monospace`;
+    ctx.fillStyle = isOnPath ? '#000' : '#94a3b8';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(nid, x, y);
+  }
+}
+
+// ═══════════════════════════════════════
+//   HOVER TOOLTIP
+// ═══════════════════════════════════════
+const tooltip = document.getElementById('tooltip');
+function handleHover(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const r = 14 * scale;
+
+  for (const id in LOCATIONS) {
+    const [x, y] = nodeXY(+id);
+    if (Math.hypot(mx - x, my - y) < r + 4) {
+      tooltip.textContent = `[${id}] ${LOCATIONS[id]}`;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top  = (e.clientY - 8) + 'px';
+      return;
+    }
+  }
+  hideTooltip();
+}
+function hideTooltip() {
+  tooltip.style.display = 'none';
+}
+
+// ═══════════════════════════════════════
+//   ALGORITHMS
+// ═══════════════════════════════════════
+function dijkstra(src, dst) {
+  const INF = Infinity;
+  const dist = {}, parent = {}, visited = new Set();
+  for (const id in LOCATIONS) { dist[+id] = INF; parent[+id] = -1; }
+  dist[src] = 0;
+
+  // Simple priority queue via sorted array
+  let pq = [[0, src]];
+
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]);
+    const [d, u] = pq.shift();
+    if (visited.has(u)) continue;
+    visited.add(u);
+    if (u === dst) break;
+
+    for (const [v, w] of adj[u]) {
+      if (!visited.has(v) && d + w < dist[v]) {
+        dist[v] = d + w;
+        parent[v] = u;
+        pq.push([dist[v], v]);
+      }
+    }
+  }
+
+  if (dist[dst] === INF) return { path: null, cost: INF };
+  const path = [];
+  let cur = dst;
+  while (cur !== -1) { path.push(cur); cur = parent[cur]; }
+  path.reverse();
+  return { path, cost: dist[dst] };
+}
+
+function bfs(src, dst) {
+  const visited = new Set([src]);
+  const parent = { [src]: -1 };
+  const queue = [src];
+
+  while (queue.length) {
+    const u = queue.shift();
+    if (u === dst) break;
+    for (const [v] of adj[u]) {
+      if (!visited.has(v)) {
+        visited.add(v);
+        parent[v] = u;
+        queue.push(v);
+      }
+    }
+  }
+
+  if (!(dst in parent)) return { path: null, hops: -1 };
+  const path = [];
+  let cur = dst;
+  while (cur !== -1) { path.push(cur); cur = parent[cur]; }
+  path.reverse();
+  return { path, hops: path.length - 1 };
+}
+
+function astar(src, dst) {
+  // No coordinate heuristic in JS version → behaves like Dijkstra
+  return dijkstra(src, dst);
+}
+
+// ═══════════════════════════════════════
+//   ALGO SELECTION UI
+// ═══════════════════════════════════════
+let selectedAlgo = 'dijkstra';
+
+function selectAlgo(el) {
+  document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  selectedAlgo = el.dataset.algo;
+}
+
+// ═══════════════════════════════════════
+//   FIND ROUTE
+// ═══════════════════════════════════════
+function findRoute() {
+  const src = +srcSel.value;
+  const dst = +dstSel.value;
+
+  if (src === dst) {
+    alert('Source and destination are the same!');
+    return;
+  }
+
+  highlightSrc = src;
+  highlightDst = dst;
+
+  const box   = document.getElementById('resultBox');
+  const title = document.getElementById('resultTitle');
+  const body  = document.getElementById('resultBody');
+
+  box.classList.add('show');
+
+  let html = '';
+  let pathToShow = null;
+
+  if (selectedAlgo === 'all') {
+    const d  = dijkstra(src, dst);
+    const b  = bfs(src, dst);
+    const a  = astar(src, dst);
+    pathToShow = d.path;
+
+    html = `
+      <div class="result-metric">
+        <span class="key">Dijkstra Distance</span>
+        <span class="val">${d.cost === Infinity ? '∞' : d.cost + 'm'}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">Dijkstra Stops</span>
+        <span class="val">${d.path ? d.path.length - 1 : '—'}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">BFS Stops</span>
+        <span class="val">${b.hops !== -1 ? b.hops : '—'}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">A* Distance</span>
+        <span class="val">${a.cost === Infinity ? '∞' : a.cost + 'm'}</span>
+      </div>
+    `;
+    title.textContent = '⚡ Comparison — All Algorithms';
+
+  } else if (selectedAlgo === 'bfs') {
+    const res = bfs(src, dst);
+    pathToShow = res.path;
+    html = `
+      <div class="result-metric">
+        <span class="key">Algorithm</span><span class="val">BFS</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">Number of Stops</span>
+        <span class="val">${res.hops !== -1 ? res.hops : 'No path'}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">Nodes Visited</span>
+        <span class="val">${res.path ? res.path.length : '—'}</span>
+      </div>
+    `;
+    title.textContent = '🔍 BFS — Fewest Stops';
+
+  } else {
+    const algo = selectedAlgo === 'astar' ? astar : dijkstra;
+    const res  = algo(src, dst);
+    pathToShow = res.path;
+    html = `
+      <div class="result-metric">
+        <span class="key">Algorithm</span>
+        <span class="val">${selectedAlgo === 'astar' ? 'A*' : "Dijkstra's"}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">Total Distance</span>
+        <span class="val">${res.cost === Infinity ? 'No path' : res.cost + ' m'}</span>
+      </div>
+      <div class="result-metric">
+        <span class="key">Number of Stops</span>
+        <span class="val">${res.path ? res.path.length - 1 : '—'}</span>
+      </div>
+    `;
+    title.textContent = selectedAlgo === 'astar' ? '🎯 A* — Heuristic Path' : '⚡ Dijkstra — Shortest Path';
+  }
+
+  body.innerHTML = html;
+  currentPath = pathToShow || [];
+  draw();
+  renderPathSteps(pathToShow);
+}
+
+// ═══════════════════════════════════════
+//   PATH STEPS DISPLAY
+// ═══════════════════════════════════════
+function renderPathSteps(path) {
+  const el = document.getElementById('pathSteps');
+  if (!path || !path.length) {
+    el.innerHTML = '<span class="path-empty">No path found between these locations.</span>';
+    return;
+  }
+
+  el.innerHTML = '';
+  path.forEach((node, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'step-node';
+    wrap.style.animationDelay = (i * 80) + 'ms';
+
+    const pill = document.createElement('span');
+    pill.className = 'step-pill' +
+      (i === 0 ? ' start' : i === path.length - 1 ? ' end' : '');
+    pill.textContent = LOCATIONS[node];
+    wrap.appendChild(pill);
+
+    if (i < path.length - 1) {
+      const arr = document.createElement('span');
+      arr.className = 'step-arrow';
+      arr.textContent = '→';
+      wrap.appendChild(arr);
+    }
+
+    el.appendChild(wrap);
+  });
+}
+
+// ═══════════════════════════════════════
+//   INIT
+// ═══════════════════════════════════════
+window.addEventListener('load', () => {
+  resize();
+  draw();
+});
+</script>
+</body>
+</html>
