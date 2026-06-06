@@ -2,6 +2,7 @@
 # Shortest path algorithms: Dijkstra, BFS, A*
 
 import heapq
+import math
 from collections import deque
 
 # ─────────────────────────────────────────────────────────
@@ -116,8 +117,7 @@ def astar(graph, source, destination, heuristic=None):
     If no heuristic is provided, behaves like Dijkstra.
     
     The heuristic function: h(node) -> estimated distance to destination
-    In a campus with no coordinate data, we use h=0 (same as Dijkstra).
-    When you add GPS coordinates in higher semesters, plug in Euclidean distance.
+    Using Euclidean distance (Haversine approximation) for GPS coordinates.
     
     Returns:
         path : list of node IDs from source to destination
@@ -125,7 +125,21 @@ def astar(graph, source, destination, heuristic=None):
         visited_order : exploration order
     """
     if heuristic is None:
-        heuristic = lambda node: 0  # Default: no heuristic (acts like Dijkstra)
+        def haversine_heuristic(node):
+            c1 = graph.coordinates.get(node)
+            c2 = graph.coordinates.get(destination)
+            if not c1 or not c2: return 0
+            
+            lat1, lon1 = c1
+            lat2, lon2 = c2
+            R = 6371000 # radius of earth in meters
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+            
+        heuristic = haversine_heuristic
 
     INF = float('inf')
     num_nodes = max(graph.get_all_nodes()) + 1

@@ -1,17 +1,19 @@
 # graph.py
 # Graph data structure using adjacency list representation
 
-from campus_data import LOCATIONS, EDGES
+from campus_data import LOCATIONS, EDGES, GPS_COORDINATES
 
 class Graph:
     def __init__(self, directed=False):
         self.directed = directed
         self.adjacency_list = {}   # { node: [(neighbor, weight), ...] }
         self.node_names = {}       # { node_id: name }
+        self.coordinates = {}      # { node_id: (lat, lng) }
 
         # Initialize all nodes
         for node_id, name in LOCATIONS.items():
             self.add_node(node_id, name)
+            self.coordinates[node_id] = GPS_COORDINATES.get(node_id)
 
         # Add all edges from campus data
         for u, v, w in EDGES:

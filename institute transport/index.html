@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Campus Route Optimizer — DSCE</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
   <style>
     /* ── TOKENS ── */
@@ -407,15 +409,59 @@
 
     .tb-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-    #graphCanvas {
+    #map {
       flex: 1;
-      display: block;
       width: 100%;
       height: 520px;
-      cursor: grab;
+      z-index: 1;
     }
 
-    #graphCanvas:active { cursor: grabbing; }
+    /* Pulse animation for user location */
+    .user-location-marker {
+      background: var(--danger);
+      border: 2px solid white;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      box-shadow: 0 0 10px var(--danger);
+      animation: pulse-marker 2s infinite;
+    }
+
+    @keyframes pulse-marker {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    .alarm-overlay {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(239, 68, 68, 0.95);
+      border: 2px solid var(--danger);
+      border-radius: 8px;
+      padding: 15px 30px;
+      z-index: 1000;
+      display: none;
+      pointer-events: none;
+      box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { top: 0; opacity: 0; }
+      to { top: 80px; opacity: 1; }
+    }
+
+    .alarm-text {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: white;
+      text-shadow: none;
+      font-family: var(--mono);
+      letter-spacing: 0.1em;
+    }
 
     /* ── PATH STEPS ── */
     .path-steps {
@@ -427,6 +473,34 @@
       gap: 0;
       flex-wrap: wrap;
       overflow-x: auto;
+    }
+
+    .direction-pill {
+      margin: 0 1.25rem 1rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .direction-pill.warn {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #fbbf24;
+    }
+
+    .direction-pill.off {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
     }
 
     .step-node {
@@ -751,13 +825,18 @@
       <h2>📍 Campus Graph</h2>
       <div class="toolbar-actions">
         <button class="tb-btn" onclick="resetView()">Reset View</button>
-        <button class="tb-btn" onclick="toggleWeights()">Toggle Weights</button>
+        <button class="tb-btn" onclick="toggleWeights()">Enable GPS Tracking</button>
+        <button class="tb-btn" onclick="simulateWalking()" style="border-color: var(--success); color: var(--success);">Simulate Walking</button>
       </div>
     </div>
-    <canvas id="graphCanvas"></canvas>
+    <div id="map"></div>
+    <div class="alarm-overlay" id="alarmOverlay">
+      <div class="alarm-text">WRONG WAY!</div>
+    </div>
     <div class="path-steps" id="pathSteps">
       <span class="path-empty">Select source & destination, then click Find Route</span>
     </div>
+    <div class="direction-pill" id="directionStatus">Direction: waiting for route</div>
   </div>
 
 </div>
@@ -808,8 +887,8 @@
   <div class="team-grid">
     <div class="team-card">
       <div class="team-avatar">BS</div>
-      <div class="team-name">Bhakti Sharma</div>
-      <div class="team-usn">1DS24CS042</div>
+      <div class="team-name">Gauri Chiranjeev</div>
+      <div class="team-usn">1DS24CS072</div>
       <div class="team-role">Graph design & Dijkstra's Algorithm implementation</div>
     </div>
     <div class="team-card">
@@ -820,8 +899,8 @@
     </div>
     <div class="team-card">
       <div class="team-avatar">GC</div>
-      <div class="team-name">Gauri Chiranjeev</div>
-      <div class="team-usn">1DS24CS072</div>
+      <div class="team-name">Bhakti Sharma</div>
+      <div class="team-usn">1DS24CS042</div>
       <div class="team-role">Data collection, BFS logic & I/O handling</div>
     </div>
   </div>
@@ -834,62 +913,126 @@
 
 <script>
 // ═══════════════════════════════════════
-//   CAMPUS DATA
+//   CAMPUS DATA & GPS COORDINATES
 // ═══════════════════════════════════════
 const LOCATIONS = {
-  0:  "Main Gate",
-  1:  "Admin Block",
-  2:  "CS/IS Block",
-  3:  "ECE/TC Block",
-  4:  "ME/CV Block",
-  5:  "EEE/AE Block",
-  6:  "Central Library",
-  7:  "Lab Complex",
-  8:  "NRI Canteen",
-  9:  "Boys Hostel",
-  10: "Girls Hostel",
-  11: "CPA Auditorium",
-  12: "Sports Ground",
-  13: "Medical Center",
-  14: "Parking Lot",
-  15: "Bus Stop"
+  0: "Staff Parking lot",
+  1: "Heritage block",
+  2: "Main gate",
+  3: "Principal parking lot",
+  4: "DSI Library",
+  5: "Vip Parking Lot",
+  6: "CPA Auditorium/PC Sagar",
+  7: "Student Parking Lot",
+  8: "Mechanical block",
+  9: "Civil block",
+  10: "EEE Building",
+  11: "Aeronautical building",
+  12: "Automobile",
+  13: "Dept of Management studies",
+  14: "Chemical Eng",
+  15: "Food Truck",
+  16: "DSI Gym",
+  17: "NRI hostel",
+  18: "NRI Canteen",
+  19: "Tennis court",
+  20: "Football Ground",
+  21: "Basketball court",
+  22: "Rock Garden",
+  23: "CD Sagar",
+  24: "Sharada Girls Hostel",
+  25: "Nelson Mandela girls Hostel",
+  26: "ECE Dept",
+  27: "CSE/ISE Dept",
+  28: "AIML Dept",
+  29: "Electronics and instrumentations eng",
+  30: "Amphitheatre",
+  31: "Dental Block",
+  32: "IEM Block",
+  33: "Indian boys hostel",
+  34: "BB Block",
+  35: "Architecture block"
+};
+
+const GPS_COORDS = {
+  0:  [12.908969, 77.566057], // Staff Parking lot
+  1:  [12.908934, 77.566505], // Heritage block
+  2:  [12.909406, 77.566792], // Main gate
+  3:  [12.909335, 77.566990], // Principal parking lot
+  4:  [12.909215, 77.567068], // DSI Library
+  5:  [12.909386, 77.567049], // Vip Parking Lot
+  6:  [12.909019, 77.566923], // CPA Auditorium/PC Sagar
+  7:  [12.909228, 77.567690], // Student Parking Lot
+  8:  [12.908512, 77.567795], // Mechanical block
+  9:  [12.908354, 77.567717], // Civil block
+  10:  [12.908024, 77.567704], // EEE Building
+  11:  [12.908854, 77.568194], // Aeronautical building
+  12:  [12.909001, 77.568216], // Automobile
+  13:  [12.908525, 77.568430], // Dept of Management studies
+  14:  [12.907879, 77.567859], // Chemical Eng
+  15:  [12.907543, 77.567238], // Food Truck
+  16:  [12.907226, 77.567612], // DSI Gym
+  17:  [12.907045, 77.567454], // NRI hostel
+  18:  [12.907138, 77.567511], // NRI Canteen
+  19:  [12.906908, 77.567060], // Tennis court
+  20:  [12.907109, 77.566695], // Football Ground
+  21:  [12.907257, 77.567083], // Basketball court
+  22:  [12.907887, 77.567057], // Rock Garden
+  23:  [12.907918, 77.567576], // CD Sagar
+  24:  [12.907637, 77.566399], // Sharada Girls Hostel
+  25:  [12.908061, 77.565570], // Nelson Mandela girls Hostel
+  26:  [12.907521, 77.565443], // ECE Dept
+  27:  [12.907788, 77.566083], // CSE/ISE Dept
+  28:  [12.907611, 77.565990], // AIML Dept
+  29:  [12.908287, 77.565627], // Electronics and instrumentations eng
+  30:  [12.908094, 77.566177], // Amphitheatre
+  31:  [12.908596, 77.565979], // Dental Block
+  32:  [12.908201, 77.567448], // IEM Block
+  33:  [12.907862, 77.565488], // Indian boys hostel
+  34:  [12.907100, 77.566175], // BB Block
+  35:  [12.906938, 77.566188], // Architecture block
 };
 
 const EDGES_RAW = [
-  [0,14,40],[0,15,30],[0,1,120],
-  [1,2,80],[1,6,100],[1,11,90],
-  [2,3,70],[2,7,60],
-  [3,5,80],[3,7,65],
-  [4,5,75],[4,12,100],
-  [5,7,90],
-  [6,7,110],[6,11,80],
-  [7,8,120],
-  [8,9,90],[8,10,85],[8,13,70],
-  [9,10,60],[9,13,80],
-  [10,12,130],
-  [11,12,150],
-  [12,14,200]
+  [2, 3, 23],
+  [4, 3, 16],
+  [2, 5, 28],
+  [4, 6, 27],
+  [6, 1, 46],
+  [1, 31, 68],
+  [31, 29, 51],
+  [29, 25, 26],
+  [25, 30, 66],
+  [25, 33, 24],
+  [30, 27, 36],
+  [5, 7, 72],
+  [7, 12, 62],
+  [12, 11, 17],
+  [7, 8, 80],
+  [8, 9, 19],
+  [9, 32, 34],
+  [9, 10, 37],
+  [10, 23, 18],
+  [10, 14, 23],
+  [23, 22, 56],
+  [23, 15, 56],
+  [23, 15, 56],
+  [15, 22, 43],
+  [15, 21, 36],
+  [21, 20, 45],
+  [21, 19, 39],
+  [15, 17, 60],
+  [17, 18, 12],
+  [18, 16, 15],
+  [15, 24, 92],
+  [24, 28, 44],
+  [28, 26, 60],
+  [15, 34, 125],
+  [34, 35, 18],
+  [2, 0, 93],
+  [33, 26, 38],
 ];
 
-// Fixed layout positions for nodes (x, y) — normalized 0..1
-const NODE_POS = {
-  0:  [0.50, 0.05],   // Main Gate — top center
-  15: [0.38, 0.05],   // Bus Stop
-  14: [0.62, 0.05],   // Parking Lot
-  1:  [0.50, 0.18],   // Admin Block
-  11: [0.68, 0.25],   // CPA Auditorium
-  6:  [0.32, 0.28],   // Central Library
-  2:  [0.50, 0.35],   // CS/IS Block
-  3:  [0.65, 0.42],   // ECE/TC Block
-  5:  [0.75, 0.52],   // EEE/AE Block
-  4:  [0.80, 0.62],   // ME/CV Block
-  7:  [0.42, 0.50],   // Lab Complex
-  8:  [0.28, 0.62],   // NRI Canteen
-  13: [0.14, 0.68],   // Medical Center
-  9:  [0.25, 0.78],   // Boys Hostel
-  10: [0.42, 0.82],   // Girls Hostel
-  12: [0.65, 0.80],   // Sports Ground
-};
 // Build adjacency list
 const adj = {};
 for (const id in LOCATIONS) adj[+id] = [];
@@ -899,209 +1042,182 @@ for (const [u, v, w] of EDGES_RAW) {
 }
 
 // ═══════════════════════════════════════
-//   POPULATE SELECTS
+//   MAP INITIALIZATION
 // ═══════════════════════════════════════
-const srcSel = document.getElementById('srcSelect');
-const dstSel = document.getElementById('dstSelect');
+let map, userMarker, pathPolyline;
+let isTracking = false;
+let userPos = null;
+let currentPathNodes = [];
+let nextTargetNodeIdx = -1;
+let audioCtx = null;
+let editMode = false;
+let pathEditMode = false;
+let selectedNodeForPath = null;
+let nodeMarkers = {}; // Keep track of markers for dragging
 
-for (const [id, name] of Object.entries(LOCATIONS)) {
-  const o1 = new Option(name, id);
-  const o2 = new Option(name, id);
-  srcSel.appendChild(o1);
-  dstSel.appendChild(o2);
-}
-dstSel.value = "4"; // default destination: Library
+function initMap() {
+  map = L.map('map').setView([12.909477, 77.566833], 18);
+  
+  L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+    maxZoom: 20,
+    attribution: 'Google'
+  }).addTo(map);
 
-// ═══════════════════════════════════════
-//   CANVAS SETUP
-// ═══════════════════════════════════════
-const canvas  = document.getElementById('graphCanvas');
-const ctx     = canvas.getContext('2d');
-let showWeights = true;
+  // Add coordinate display for debugging
+  const coordDisplay = L.control({position: 'bottomleft'});
+  coordDisplay.onAdd = function(map) {
+    this._div = L.DomUtil.create('div', 'coord-display');
+    this._div.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    this._div.style.color = 'white';
+    this._div.style.padding = '5px';
+    this.update();
+    return this._div;
+  };
+  coordDisplay.update = function(latlng) {
+    this._div.innerHTML = latlng ? latlng.lat.toFixed(6) + ', ' + latlng.lng.toFixed(6) : 'Hover over map';
+  };
+  coordDisplay.addTo(map);
 
-let currentPath  = [];
-let highlightSrc = -1;
-let highlightDst = -1;
-let animFrame    = 0;
+  map.on('mousemove', function(e) {
+    coordDisplay.update(e.latlng);
+  });
 
-// Pan/zoom state
-let offsetX = 0, offsetY = 0, scale = 1;
-let dragging = false, lastX = 0, lastY = 0;
+  // Add building markers
+  for (const [id, coords] of Object.entries(GPS_COORDS)) {
+    const marker = L.circleMarker(coords, {
+      radius: 8,
+      color: '#1e2d4a',
+      fillColor: '#00e5ff',
+      fillOpacity: 0.8,
+      weight: 2
+    }).addTo(map).bindTooltip(`[${id}] ${LOCATIONS[id]}`, { permanent: true, direction: 'top', className: 'node-label' });
+    
+    marker.on('click', function(e) {
+      if (pathEditMode) {
+        if (selectedNodeForPath === null) {
+          selectedNodeForPath = id;
+          this.setStyle({fillColor: '#ff9800'}); // Highlight selected
+        } else {
+          if (selectedNodeForPath !== id) {
+            // Add edge and calculate distance in meters
+            const dist = Math.round(nodeMarkers[selectedNodeForPath].getLatLng().distanceTo(this.getLatLng()));
+            EDGES_RAW.push([parseInt(selectedNodeForPath), parseInt(id), dist]);
+            drawEdges();
+          }
+          // Reset selection
+          nodeMarkers[selectedNodeForPath].setStyle({fillColor: '#00e5ff'});
+          selectedNodeForPath = null;
+        }
+      }
+    });
 
-canvas.addEventListener('mousedown', e => {
-  dragging = true; lastX = e.clientX; lastY = e.clientY;
-});
-canvas.addEventListener('mousemove', e => {
-  if (dragging) {
-    offsetX += e.clientX - lastX;
-    offsetY += e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
-    draw();
-  }
-  handleHover(e);
-});
-canvas.addEventListener('mouseup',   () => dragging = false);
-canvas.addEventListener('mouseleave',() => { dragging = false; hideTooltip(); });
-canvas.addEventListener('wheel', e => {
-  e.preventDefault();
-  const delta = e.deltaY > 0 ? 0.9 : 1.1;
-  scale = Math.max(0.4, Math.min(2.5, scale * delta));
-  draw();
-}, { passive: false });
-
-function resetView() { offsetX = 0; offsetY = 0; scale = 1; draw(); }
-function toggleWeights() { showWeights = !showWeights; draw(); }
-
-function resize() {
-  const rect = canvas.getBoundingClientRect();
-  canvas.width  = rect.width;
-  canvas.height = rect.height;
-  draw();
-}
-
-window.addEventListener('resize', resize);
-
-// ═══════════════════════════════════════
-//   COORDINATE HELPERS
-// ═══════════════════════════════════════
-function nodeXY(id) {
-  const [px, py] = NODE_POS[id];
-  const W = canvas.width, H = canvas.height;
-  const pad = 60;
-  const x = pad + px * (W - pad * 2);
-  const y = pad + py * (H - pad * 2);
-  return [x * scale + offsetX, y * scale + offsetY];
-}
-
-// ═══════════════════════════════════════
-//   DRAW
-// ═══════════════════════════════════════
-function draw() {
-  if (!canvas.width) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Determine path set for highlight
-  const pathSet = new Set(currentPath);
-  const pathEdges = new Set();
-  for (let i = 0; i < currentPath.length - 1; i++) {
-    pathEdges.add(`${currentPath[i]}-${currentPath[i+1]}`);
-    pathEdges.add(`${currentPath[i+1]}-${currentPath[i]}`);
+    nodeMarkers[id] = marker;
   }
 
-  // Draw edges
-  const drawnEdges = new Set();
-  for (const [u, v, w] of EDGES_RAW) {
-    const key = `${Math.min(u,v)}-${Math.max(u,v)}`;
-    if (drawnEdges.has(key)) continue;
-    drawnEdges.add(key);
+  drawEdges();
+}
 
-    const [x1,y1] = nodeXY(u);
-    const [x2,y2] = nodeXY(v);
-    const isPath = pathEdges.has(`${u}-${v}`);
+let edgeLines = [];
+function drawEdges() {
+  edgeLines.forEach(l => map.removeLayer(l));
+  edgeLines = [];
+  EDGES_RAW.forEach(([u, v]) => {
+    const l = L.polyline([nodeMarkers[u].getLatLng(), nodeMarkers[v].getLatLng()], {
+      color: '#1e2d4a',
+      weight: 1.5,
+      opacity: 0.4
+    }).addTo(map);
+    edgeLines.push(l);
+  });
+}
 
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-
-    if (isPath) {
-      ctx.strokeStyle = '#00e5ff';
-      ctx.lineWidth   = 2.5;
-      ctx.shadowColor = '#00e5ff';
-      ctx.shadowBlur  = 10;
-    } else {
-      ctx.strokeStyle = '#1e2d4a';
-      ctx.lineWidth   = 1.5;
-      ctx.shadowBlur  = 0;
+// ═══════════════════════════════════════
+//   EDIT MODE (Drag Nodes)
+// ═══════════════════════════════════════
+function toggleEditMode() {
+  editMode = !editMode;
+  const btn = document.getElementById('editBtn');
+  
+  if (editMode) {
+    btn.textContent = "💾 Export New Coordinates";
+    btn.style.background = "var(--accent3)";
+    btn.style.color = "#000";
+    
+    // Make markers draggable
+    for (const [id, marker] of Object.entries(nodeMarkers)) {
+      // Replace circleMarker with draggable normal marker for edit mode
+      map.removeLayer(marker);
+      const dragMarker = L.marker(marker.getLatLng(), {
+        draggable: true,
+        title: LOCATIONS[id]
+      }).addTo(map).bindTooltip(`Drag me: ${LOCATIONS[id]}`, {permanent: true});
+      
+      dragMarker.on('drag', function(e) {
+        drawEdges(); // Redraw edges as it moves
+      });
+      
+      nodeMarkers[id] = dragMarker;
     }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Weight label
-    if (showWeights) {
-      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-      ctx.fillStyle = isPath ? '#00b8cc' : '#334155';
-      ctx.font = `${Math.round(9 * scale)}px Space Mono, monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${w}m`, mx, my - 7);
+    drawEdges();
+    alert("Drag the markers to the exact buildings on the map. When done, click 'Export' to get the Python code.");
+  } else {
+    // Export mode
+    let pyCode = "GPS_COORDINATES = {\n";
+    let jsCode = "const GPS_COORDS = {\n";
+    for (const [id, marker] of Object.entries(nodeMarkers)) {
+      const ll = marker.getLatLng();
+      pyCode += `    ${id}:  (${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}), # ${LOCATIONS[id]}\n`;
+      jsCode += `  ${id}:  [${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}], // ${LOCATIONS[id]}\n`;
     }
-  }
-
-  // Draw nodes
-  for (const id in LOCATIONS) {
-    const nid = +id;
-    const [x, y] = nodeXY(nid);
-    const r = Math.max(6, 14 * scale);
-    const isOnPath = pathSet.has(nid);
-    const isSrc = nid === highlightSrc;
-    const isDst = nid === highlightDst;
-
-    // Glow for path nodes
-    if (isOnPath) {
-      ctx.beginPath();
-      ctx.arc(x, y, r + 6, 0, Math.PI * 2);
-      ctx.fillStyle = isSrc ? 'rgba(16,185,129,0.2)' :
-                      isDst ? 'rgba(239,68,68,0.2)' :
-                              'rgba(0,229,255,0.12)';
-      ctx.fill();
-    }
-
-    // Node circle
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-
-    if (isSrc)       ctx.fillStyle = '#10b981';
-    else if (isDst)  ctx.fillStyle = '#ef4444';
-    else if (isOnPath) ctx.fillStyle = '#00e5ff';
-    else             ctx.fillStyle = '#1e2d4a';
-
-    ctx.fill();
-    ctx.strokeStyle = isSrc ? '#10b981' :
-                      isDst ? '#ef4444' :
-                      isOnPath ? '#00e5ff' : '#334155';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Node label
-    const fontSize = Math.max(8, Math.round(10 * scale));
-    ctx.font = `600 ${fontSize}px Sora, sans-serif`;
-    ctx.fillStyle = isOnPath ? '#fff' : '#64748b';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(LOCATIONS[nid], x, y + r + 4);
-
-    // ID inside node
-    ctx.font = `700 ${Math.max(7, Math.round(9*scale))}px Space Mono, monospace`;
-    ctx.fillStyle = isOnPath ? '#000' : '#94a3b8';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(nid, x, y);
+    pyCode += "}";
+    jsCode += "};";
+    
+    const finalExport = `=== PASTE THIS IN campus_data.py ===\n\n${pyCode}\n\n\n=== PASTE THIS IN index.html (around line 905) ===\n\n${jsCode}`;
+    
+    // Download or show in prompt
+    navigator.clipboard.writeText(finalExport).then(() => {
+      alert("Coordinates copied to clipboard! You must update BOTH files (campus_data.py AND index.html) for changes to reflect on the website.\n\n" + finalExport);
+    }).catch(err => {
+      prompt("Copy these coordinates to campus_data.py and index.html:", finalExport);
+    });
+    
+    // Refresh page to reset state (simplest way)
+    location.reload();
   }
 }
 
-// ═══════════════════════════════════════
-//   HOVER TOOLTIP
-// ═══════════════════════════════════════
-const tooltip = document.getElementById('tooltip');
-function handleHover(e) {
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const r = 14 * scale;
-
-  for (const id in LOCATIONS) {
-    const [x, y] = nodeXY(+id);
-    if (Math.hypot(mx - x, my - y) < r + 4) {
-      tooltip.textContent = `[${id}] ${LOCATIONS[id]}`;
-      tooltip.style.display = 'block';
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top  = (e.clientY - 8) + 'px';
-      return;
+function togglePathMode() {
+  pathEditMode = !pathEditMode;
+  const btn = document.getElementById('pathBtn');
+  
+  if (pathEditMode) {
+    btn.textContent = "💾 Export Paths";
+    btn.style.background = "#ff9800";
+    btn.style.color = "#000";
+    alert("Click on a marker to select it (it will turn orange), then click another marker to draw a path between them. When finished connecting all buildings, click 'Export'.");
+  } else {
+    // Export mode
+    let pyCode = "EDGES = [\n";
+    let jsCode = "const EDGES_RAW = [\n";
+    
+    for (const edge of EDGES_RAW) {
+      pyCode += `    (${edge[0]}, ${edge[1]}, ${edge[2]}),\n`;
+      jsCode += `  [${edge[0]}, ${edge[1]}, ${edge[2]}],\n`;
     }
+    pyCode += "]";
+    jsCode += "];";
+    
+    const finalExport = `=== PASTE THIS IN campus_data.py ===\n\n${pyCode}\n\n\n=== PASTE THIS IN index.html (around line 965) ===\n\n${jsCode}`;
+    
+    navigator.clipboard.writeText(finalExport).then(() => {
+      alert("Paths copied to clipboard! Update BOTH files (campus_data.py AND index.html).\n\n" + finalExport);
+    }).catch(err => {
+      prompt("Copy these paths to campus_data.py and index.html:", finalExport);
+    });
+    
+    selectedNodeForPath = null;
+    location.reload();
   }
-  hideTooltip();
-}
-function hideTooltip() {
-  tooltip.style.display = 'none';
 }
 
 // ═══════════════════════════════════════
@@ -1113,16 +1229,13 @@ function dijkstra(src, dst) {
   for (const id in LOCATIONS) { dist[+id] = INF; parent[+id] = -1; }
   dist[src] = 0;
 
-  // Simple priority queue via sorted array
   let pq = [[0, src]];
-
   while (pq.length) {
     pq.sort((a, b) => a[0] - b[0]);
     const [d, u] = pq.shift();
     if (visited.has(u)) continue;
     visited.add(u);
     if (u === dst) break;
-
     for (const [v, w] of adj[u]) {
       if (!visited.has(v) && d + w < dist[v]) {
         dist[v] = d + w;
@@ -1131,7 +1244,6 @@ function dijkstra(src, dst) {
       }
     }
   }
-
   if (dist[dst] === INF) return { path: null, cost: INF };
   const path = [];
   let cur = dst;
@@ -1141,10 +1253,7 @@ function dijkstra(src, dst) {
 }
 
 function bfs(src, dst) {
-  const visited = new Set([src]);
-  const parent = { [src]: -1 };
-  const queue = [src];
-
+  const visited = new Set([src]), parent = { [src]: -1 }, queue = [src];
   while (queue.length) {
     const u = queue.shift();
     if (u === dst) break;
@@ -1156,7 +1265,6 @@ function bfs(src, dst) {
       }
     }
   }
-
   if (!(dst in parent)) return { path: null, hops: -1 };
   const path = [];
   let cur = dst;
@@ -1166,14 +1274,277 @@ function bfs(src, dst) {
 }
 
 function astar(src, dst) {
-  // No coordinate heuristic in JS version → behaves like Dijkstra
-  return dijkstra(src, dst);
+  const INF = Infinity;
+  const dist = {}, parent = {}, visited = new Set();
+  for (const id in LOCATIONS) { dist[+id] = INF; parent[+id] = -1; }
+  dist[src] = 0;
+
+  let pq = [[0 + getDistance(GPS_COORDS[src][0], GPS_COORDS[src][1], GPS_COORDS[dst][0], GPS_COORDS[dst][1]), src]];
+  
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]);
+    const [f, u] = pq.shift();
+    if (visited.has(u)) continue;
+    visited.add(u);
+    if (u === dst) break;
+    
+    for (const [v, w] of adj[u]) {
+      if (!visited.has(v) && dist[u] + w < dist[v]) {
+        dist[v] = dist[u] + w;
+        parent[v] = u;
+        const h = getDistance(GPS_COORDS[v][0], GPS_COORDS[v][1], GPS_COORDS[dst][0], GPS_COORDS[dst][1]);
+        pq.push([dist[v] + h, v]);
+      }
+    }
+  }
+  if (dist[dst] === INF) return { path: null, cost: INF };
+  const path = [];
+  let cur = dst;
+  while (cur !== -1) { path.push(cur); cur = parent[cur]; }
+  path.reverse();
+  return { path, cost: dist[dst] };
 }
 
 // ═══════════════════════════════════════
-//   ALGO SELECTION UI
+//   GPS & TRACKING
+// ═══════════════════════════════════════
+function toggleTracking() {
+  if (isTracking) {
+    navigator.geolocation.clearWatch(watchId);
+    isTracking = false;
+    alert("GPS Tracking Disabled");
+  } else {
+    if (!navigator.geolocation) return alert("Geolocation not supported");
+    
+    // Resume audio context on user interaction
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    watchId = navigator.geolocation.watchPosition(updateUserLocation, handleGPSLevelError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 5000
+    });
+    isTracking = true;
+    alert("GPS Tracking Enabled. Stay on the highlighted path!");
+  }
+}
+
+function updateUserLocation(pos) {
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const heading = Number.isFinite(pos.coords.heading) ? pos.coords.heading : null;
+  userPos = [lat, lng];
+
+  const distFromCampus = getDistance(lat, lng, 12.909406, 77.566792);
+  if (distFromCampus > 2000) {
+    if (isTracking) {
+      toggleTracking(); // Disable it
+      alert("You are too far from the DSCE campus to use live GPS tracking. Please use the 'Simulate Walking' feature instead to test the navigation.");
+    }
+    return;
+  }
+
+  if (!userMarker) {
+    const userIcon = L.divIcon({ className: 'user-location-marker', iconSize: [14, 14] });
+    userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
+  } else {
+    userMarker.setLatLng([lat, lng]);
+  }
+
+  map.panTo([lat, lng]);
+  updateDirectionStatus(lat, lng, heading);
+  checkDirection(lat, lng);
+}
+
+function updateDirectionStatus(lat, lng, heading) {
+  const statusEl = document.getElementById('directionStatus');
+  if (!statusEl) return;
+
+  if (!currentPathNodes.length || nextTargetNodeIdx < 1 || nextTargetNodeIdx >= currentPathNodes.length) {
+    statusEl.textContent = 'Direction: waiting for route';
+    statusEl.className = 'direction-pill';
+    return;
+  }
+
+  const targetNode = currentPathNodes[nextTargetNodeIdx];
+  const targetCoords = GPS_COORDS[targetNode];
+  const bearingToTarget = getBearing(lat, lng, targetCoords[0], targetCoords[1]);
+
+  if (!Number.isFinite(heading)) {
+    statusEl.textContent = 'Direction: heading unavailable';
+    statusEl.className = 'direction-pill warn';
+    return;
+  }
+
+  const diff = Math.abs(normalizeAngle(bearingToTarget - heading));
+
+  if (diff < 35) {
+    statusEl.textContent = 'Direction: walking toward the next checkpoint';
+    statusEl.className = 'direction-pill';
+  } else if (diff < 90) {
+    statusEl.textContent = 'Direction: slight turn needed';
+    statusEl.className = 'direction-pill warn';
+  } else {
+    statusEl.textContent = 'Direction: you may be walking off route';
+    statusEl.className = 'direction-pill off';
+  }
+}
+
+let simInterval = null;
+function simulateWalking() {
+  if (currentPathNodes.length < 2) return alert("Please find a route first before simulating walking.");
+  if (simInterval) clearInterval(simInterval);
+  
+  let step = 0;
+  let totalNodes = currentPathNodes.length;
+  
+  if (!userMarker) {
+    const userIcon = L.divIcon({ className: 'user-location-marker', iconSize: [14, 14] });
+    userMarker = L.marker(GPS_COORDS[currentPathNodes[0]], { icon: userIcon }).addTo(map);
+  } else {
+    userMarker.setLatLng(GPS_COORDS[currentPathNodes[0]]);
+  }
+  
+  map.panTo(GPS_COORDS[currentPathNodes[0]]);
+  
+  simInterval = setInterval(() => {
+    step++;
+    if (step >= totalNodes) {
+      clearInterval(simInterval);
+      alert("Simulation Complete! You have reached your destination.");
+      return;
+    }
+    const coords = GPS_COORDS[currentPathNodes[step]];
+    userMarker.setLatLng(coords);
+    map.panTo(coords);
+  }, 1000);
+}
+
+function checkDirection(lat, lng) {
+  if (currentPathNodes.length < 2 || nextTargetNodeIdx === -1) return;
+
+  const targetNode = currentPathNodes[nextTargetNodeIdx];
+  const targetCoords = GPS_COORDS[targetNode];
+  
+  // Calculate distance to target node
+  const distToTarget = getDistance(lat, lng, targetCoords[0], targetCoords[1]);
+  
+  // If reached within 10m of target, move to next node
+  if (distToTarget < 10) {
+    nextTargetNodeIdx++;
+    if (nextTargetNodeIdx >= currentPathNodes.length) {
+      alert("You have reached your destination!");
+      stopNavigation();
+    }
+    return;
+  }
+
+  // Wrong direction logic: If moving away from target or too far from path
+  // For simplicity, we check if user is > 20m from the current path segment
+  const prevNode = currentPathNodes[nextTargetNodeIdx - 1];
+  const prevCoords = GPS_COORDS[prevNode];
+  const distFromSegment = distToSegment([lat, lng], prevCoords, targetCoords);
+
+  if (distFromSegment > 20) {
+    triggerAlarm(true);
+  } else {
+    triggerAlarm(false);
+  }
+}
+
+function triggerAlarm(active) {
+  const overlay = document.getElementById('alarmOverlay');
+  if (active) {
+    overlay.style.display = 'block';
+  } else {
+    overlay.style.display = 'none';
+  }
+}
+
+function normalizeAngle(angle) {
+  const normalized = ((angle % 360) + 360) % 360;
+  return normalized > 180 ? normalized - 360 : normalized;
+}
+
+function playAlarmSound() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.2);
+}
+
+function stopNavigation() {
+  nextTargetNodeIdx = -1;
+  triggerAlarm(false);
+  const statusEl = document.getElementById('directionStatus');
+  if (statusEl) {
+    statusEl.textContent = 'Direction: waiting for route';
+    statusEl.className = 'direction-pill';
+  }
+}
+
+// ═══════════════════════════════════════
+//   MATH HELPERS
+// ═══════════════════════════════════════
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // meters
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function getBearing(lat1, lon1, lat2, lon2) {
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) -
+            Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+  return (θ * 180 / Math.PI + 360) % 360;
+}
+
+function distToSegment(p, a, b) {
+  const x = p[0], y = p[1], x1 = a[0], y1 = a[1], x2 = b[0], y2 = b[1];
+  const L2 = (x2-x1)**2 + (y2-y1)**2;
+  if (L2 === 0) return Math.sqrt((x-x1)**2 + (y-y1)**2);
+  let t = ((x-x1)*(x2-x1) + (y-y1)*(y2-y1)) / L2;
+  t = Math.max(0, Math.min(1, t));
+  const px = x1 + t*(x2-x1), py = y1 + t*(y2-y1);
+  return getDistance(x, y, px, py);
+}
+
+function handleGPSLevelError(err) {
+  console.warn(`ERROR(${err.code}): ${err.message}`);
+}
+
+// ═══════════════════════════════════════
+//   UI HANDLERS
 // ═══════════════════════════════════════
 let selectedAlgo = 'dijkstra';
+const srcSel = document.getElementById('srcSelect');
+const dstSel = document.getElementById('dstSelect');
+
+function populateSelects() {
+  for (const [id, name] of Object.entries(LOCATIONS)) {
+    srcSel.add(new Option(name, id));
+    dstSel.add(new Option(name, id));
+  }
+  dstSel.value = "6"; 
+}
 
 function selectAlgo(el) {
   document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
@@ -1181,140 +1552,62 @@ function selectAlgo(el) {
   selectedAlgo = el.dataset.algo;
 }
 
-// ═══════════════════════════════════════
-//   FIND ROUTE
-// ═══════════════════════════════════════
 function findRoute() {
   const src = +srcSel.value;
   const dst = +dstSel.value;
+  if (src === dst) return alert("Source and Destination are the same!");
 
-  if (src === dst) {
-    alert('Source and destination are the same!');
-    return;
+  let res;
+  if (selectedAlgo === 'bfs') res = bfs(src, dst);
+  else if (selectedAlgo === 'astar') res = astar(src, dst);
+  else res = dijkstra(src, dst);
+
+  currentPathNodes = res.path || [];
+  
+  if (pathPolyline) map.removeLayer(pathPolyline);
+  if (currentPathNodes.length) {
+    const latlngs = currentPathNodes.map(id => GPS_COORDS[id]);
+    pathPolyline = L.polyline(latlngs, { color: '#00e5ff', weight: 5, glow: true }).addTo(map);
+    map.fitBounds(pathPolyline.getBounds(), { padding: [50, 50] });
+    
+    // Start nav logic if tracking is on
+    if (isTracking) nextTargetNodeIdx = 1;
   }
-
-  highlightSrc = src;
-  highlightDst = dst;
-
-  const box   = document.getElementById('resultBox');
-  const title = document.getElementById('resultTitle');
-  const body  = document.getElementById('resultBody');
-
-  box.classList.add('show');
-
-  let html = '';
-  let pathToShow = null;
-
-  if (selectedAlgo === 'all') {
-    const d  = dijkstra(src, dst);
-    const b  = bfs(src, dst);
-    const a  = astar(src, dst);
-    pathToShow = d.path;
-
-    html = `
-      <div class="result-metric">
-        <span class="key">Dijkstra Distance</span>
-        <span class="val">${d.cost === Infinity ? '∞' : d.cost + 'm'}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">Dijkstra Stops</span>
-        <span class="val">${d.path ? d.path.length - 1 : '—'}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">BFS Stops</span>
-        <span class="val">${b.hops !== -1 ? b.hops : '—'}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">A* Distance</span>
-        <span class="val">${a.cost === Infinity ? '∞' : a.cost + 'm'}</span>
-      </div>
-    `;
-    title.textContent = '⚡ Comparison — All Algorithms';
-
-  } else if (selectedAlgo === 'bfs') {
-    const res = bfs(src, dst);
-    pathToShow = res.path;
-    html = `
-      <div class="result-metric">
-        <span class="key">Algorithm</span><span class="val">BFS</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">Number of Stops</span>
-        <span class="val">${res.hops !== -1 ? res.hops : 'No path'}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">Nodes Visited</span>
-        <span class="val">${res.path ? res.path.length : '—'}</span>
-      </div>
-    `;
-    title.textContent = '🔍 BFS — Fewest Stops';
-
-  } else {
-    const algo = selectedAlgo === 'astar' ? astar : dijkstra;
-    const res  = algo(src, dst);
-    pathToShow = res.path;
-    html = `
-      <div class="result-metric">
-        <span class="key">Algorithm</span>
-        <span class="val">${selectedAlgo === 'astar' ? 'A*' : "Dijkstra's"}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">Total Distance</span>
-        <span class="val">${res.cost === Infinity ? 'No path' : res.cost + ' m'}</span>
-      </div>
-      <div class="result-metric">
-        <span class="key">Number of Stops</span>
-        <span class="val">${res.path ? res.path.length - 1 : '—'}</span>
-      </div>
-    `;
-    title.textContent = selectedAlgo === 'astar' ? '🎯 A* — Heuristic Path' : '⚡ Dijkstra — Shortest Path';
-  }
-
-  body.innerHTML = html;
-  currentPath = pathToShow || [];
-  draw();
-  renderPathSteps(pathToShow);
+  
+  displayResults(res);
+  renderPathSteps(res.path);
 }
 
-// ═══════════════════════════════════════
-//   PATH STEPS DISPLAY
-// ═══════════════════════════════════════
+function displayResults(res) {
+  const box = document.getElementById('resultBox');
+  const body = document.getElementById('resultBody');
+  box.classList.add('show');
+  
+  body.innerHTML = `
+    <div class="result-metric"><span class="key">Distance</span><span class="val">${res.cost ? res.cost + 'm' : '—'}</span></div>
+    <div class="result-metric"><span class="key">Stops</span><span class="val">${res.path ? res.path.length - 1 : '—'}</span></div>
+  `;
+}
+
 function renderPathSteps(path) {
   const el = document.getElementById('pathSteps');
-  if (!path || !path.length) {
-    el.innerHTML = '<span class="path-empty">No path found between these locations.</span>';
-    return;
-  }
-
   el.innerHTML = '';
+  if (!path) { el.innerHTML = '<span class="path-empty">No path found.</span>'; return; }
   path.forEach((node, i) => {
     const wrap = document.createElement('div');
     wrap.className = 'step-node';
-    wrap.style.animationDelay = (i * 80) + 'ms';
-
-    const pill = document.createElement('span');
-    pill.className = 'step-pill' +
-      (i === 0 ? ' start' : i === path.length - 1 ? ' end' : '');
-    pill.textContent = LOCATIONS[node];
-    wrap.appendChild(pill);
-
-    if (i < path.length - 1) {
-      const arr = document.createElement('span');
-      arr.className = 'step-arrow';
-      arr.textContent = '→';
-      wrap.appendChild(arr);
-    }
-
+    wrap.innerHTML = `<span class="step-pill ${i===0?'start':i===path.length-1?'end':''}">${LOCATIONS[node]}</span>`;
+    if (i < path.length-1) wrap.innerHTML += '<span class="step-arrow">→</span>';
     el.appendChild(wrap);
   });
 }
 
-// ═══════════════════════════════════════
-//   INIT
-// ═══════════════════════════════════════
+function resetView() { map.setView([12.909477, 77.566833], 18); }
+function toggleWeights() { toggleTracking(); } // Reusing button for GPS toggle
+
 window.addEventListener('load', () => {
-  resize();
-  draw();
+  initMap();
+  populateSelects();
 });
 </script>
 </body>
